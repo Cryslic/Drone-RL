@@ -1,1 +1,184 @@
+import pygame
+import numpy as np
+import math as mat
+import random as rand
+import gymnasium as gym
+from gymnasium import spaces
 
+T = 0.1
+L = 40
+I = 100
+M = 10
+Gravitational_Constant = 9.8
+SCREEN_WIDTH = 1280
+SCREEN_HEIGHT = 720
+CENTER_X = SCREEN_WIDTH // 2
+CENTER_Y = SCREEN_HEIGHT // 2
+
+
+class Drone:
+    def init(self, f1, f2, x=0, y=0):
+        self.f1 = float(f1)
+        self.f2 = float(f2)
+        self.alpha = 0.0
+        self.omega = 0.0
+        self.theta = 0.0
+        self.beta = 90.0
+        self.ax = 0.0
+        self.vx = 0.0
+        self.ox = x
+        self.ay = 0.0
+        self.vy = 0.0
+        self.oy = y
+
+    def update_physics(self):
+        self.beta = 90 - self.theta
+        self.alpha = (L * (self.f1 - self.f2)) / (2 * I)
+        self.omega = self.omega + self.alpha * T
+        self.theta = self.theta + self.omega * T
+
+        thrust = (self.f1 + self.f2) * mat.sin(mat.radians(self.beta))
+        self.ay = (thrust - M * Gravitational_Constant) / M
+        self.vy = self.vy + self.ay * T
+        self.oy = self.oy + self.vy * T
+
+        self.ax = (self.f1 + self.f2) * mat.cos(mat.radians(self.beta)) / M
+        self.vx = self.vx + self.ax * T
+        self.ox = self.ox + self.vx * T
+
+    def calculate_points(self):
+        x1 = CENTER_X + self.ox + L * mat.cos(mat.radians(self.theta))
+        y1 = CENTER_Y - self.oy + L * mat.sin(mat.radians(self.theta))
+        x2 = CENTER_X + self.ox - L * mat.cos(mat.radians(self.theta))
+        y2 = CENTER_Y - self.oy - L * mat.sin(mat.radians(self.theta))
+
+        return x1, y1, x2, y2, CENTER_X + self.ox, CENTER_Y - self.oy
+
+
+class Goal:
+    def init(self, x, y, radius=80):
+        self.x = x
+        self.y = y
+        self.radius = radius
+
+    def move_to(self, x, y):
+        self.x = x
+        self.y = y
+
+    def reached(self, drone):
+        inside = (
+            self.x - self.radius < drone.ox < self.x + self.radius
+            and self.y - self.radius < drone.oy < self.y + self.radius
+        )
+
+        if inside:
+            print("Goal Reached")
+            return True
+
+        return False
+
+
+def Plotting(X1, Y1, X2, Y2, O1, O2):
+    pygame.draw.line(screen, "black", (X1, Y1), (X2, Y2), 5)
+    pygame.draw.circle(screen, "blue", (X1, Y1), 10)
+    pygame.draw.circle(screen, "blue", (X2, Y2), 10)
+    pygame.draw.circle(screen, "red", (O1, O2), 10)
+
+    pygame.draw.circle(
+        screen,
+        "green",
+        (CENTER_X + goal.x, CENTER_Y - goal.y),
+        goal.radius,
+        20,
+    )
+
+
+# pygame setup
+pygame.init()
+screen = pygame.display.set_mode((1280, 720))
+clock = pygame.time.Clock()
+running = True
+
+drone = Drone(f1=48.9, f2=49.9, x=0, y=0)
+goal = Goal(0, 0)
+G = 0
+reward = 10
+
+
+def Goal_Reached():
+    G += reward
+
+    # goal.move_to(
+    #     rand.randint(-CENTER_X + goal.radius, CENTER_X - goal.radius),
+    #     rand.randint(-CENTER_Y + goal.radius, CENTER_Y - goal.radius),
+    # )
+
+
+class World_Enviorment(gym.Env):
+    def init(self):
+        self.observation_space = gym.spaces.Dict(
+            {
+                "agent": gym.spaces.Box(
+                    Drone.ox,
+                    Drone.oy,
+                    dtype=int,
+                ),
+                "target": gym.spaces.Box(
+                    Goal.x,
+                    Goal.y,
+                    dtype=int,
+                ),
+            }
+        )
+
+        self.action_space = spaces.MultiDiscrete([16, 16])
+
+        low = np.array(
+            [-np.inf, -np.inf, -np.inf, -np.inf, -np.inf, -np.inf],
+            dtype=np.float32,
+        )
+
+        high = np.array(
+            [np.inf, np.inf, np.inf, np.inf, np.inf, np.inf],
+            dtype=np.float32,
+        )
+
+        # Change the shape to (6,)
+        self.observation_space = spaces.Box(
+            low=low,
+            high=high,
+            shape=(6,),
+            dtype=np.float32,
+        )
+
+    def _get_obs(self):
+        return np.array(
+            [
+                Drone.vx,
+                Drone.vy,
+                Drone.px,
+                Drone.py,
+                Drone.ax,
+                Drone.ay,
+            ],
+            dtype=np.float32,
+        )
+
+
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+
+    screen.fill("purple")
+    drone.update_physics()
+    print(drone.ox, drone.oy)
+
+    if goal.reached(drone):
+        Goal_Reached
+
+    Plotting(*drone.calculate_points())
+    pygame.display.flip()
+    clock.tick(60)
+
+pygame.quit()
